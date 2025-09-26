@@ -1,69 +1,46 @@
 package mcp.agent.service;
 
-import mcp.agent.model.ollama.OllamaChatRequest;
-import mcp.agent.model.ollama.OllamaChatResponse;
-import mcp.agent.model.ollama.OllamaMessage;
-
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
+import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
-
-import java.util.List;
+import java.util.*;
 
 @Service
 public class OllamaService {
 
-    private final RestTemplate restTemplate;
-    private final String ollamaApiUrl;
-    private final String ollamaApiKey;
-    private final String defaultModel;
+    @Value("${ollama.api.key}")
+    private String apiKey;
 
-    @Autowired
-    public OllamaService(
-            RestTemplate restTemplate,
-            String ollamaApiUrl,
-            String ollamaApiKey,
-            @Value("${ollama.model.default}") String defaultModel) {
-        this.restTemplate = restTemplate;
-        this.ollamaApiUrl = ollamaApiUrl;
-        this.ollamaApiKey = ollamaApiKey;
-        this.defaultModel = defaultModel;
-    }
+    private static final String API_URL = "https://ollama.com/api/chat";
 
-    /**
-     * Send a prompt to the Ollama model and get a response
-     *
-     * @param prompt The user prompt to send to the model
-     * @return The model's response
-     */
-    public String sendPrompt(String prompt) {
-        OllamaMessage message = new OllamaMessage("user", prompt);
-        OllamaChatRequest request = new OllamaChatRequest(
-            defaultModel,
-            List.of(message),
-            false
-        );
+    public String chat(String model, String prompt) {
+        RestTemplate restTemplate = new RestTemplate();
 
-        OllamaChatResponse response = sendChatRequest(request);
-        return response.getMessage().getContent();
-    }
+        // Build request body
+        Map<String, Object> body = new HashMap<>();
+        body.put("model", model);
+        List<Map<String, String>> messages = new ArrayList<>();
+        messages.add(Map.of("role", "user", "content", prompt));
+        body.put("messages", messages);
+        body.put("stream", false);
 
-    private OllamaChatResponse sendChatRequest(OllamaChatRequest request) {
+        // Set headers
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setBearerAuth(apiKey);
 
-        // Add authorization header if API key is provided
-        if (ollamaApiKey != null && !ollamaApiKey.isEmpty()) {
-            headers.set("Authorization", "Bearer " + ollamaApiKey);
+        HttpEntity<Map<String, Object>> entity = new HttpEntity<>(body, headers);
+
+        // Send request
+        ResponseEntity<Map> response = restTemplate.postForEntity(API_URL, entity, Map.class);
+
+        // Extract response content
+        Map responseBody = response.getBody();
+        if (responseBody != null && responseBody.containsKey("message")) {
+            Map message = (Map) responseBody.get("message");
+            return (String) message.get("content");
         }
-
-        HttpEntity<OllamaChatRequest> entity = new HttpEntity<>(request, headers);
-        String url = ollamaApiUrl + "/chat";
-
-        return restTemplate.postForObject(url, entity, OllamaChatResponse.class);
+        return "No response";
     }
 }
