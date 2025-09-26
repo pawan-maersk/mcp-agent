@@ -69,27 +69,52 @@ public class McpController {
         return ResponseEntity.ok(resultText);
     }
 
+    // Helper to extract the first JSON object or array from a string
+    private String extractFirstJsonStructure(String text) {
+        int objStart = text.indexOf('{');
+        int objEnd = text.lastIndexOf('}');
+        int arrStart = text.indexOf('[');
+        int arrEnd = text.lastIndexOf(']');
+        // Prefer array if present and well-formed
+        if (arrStart != -1 && arrEnd != -1 && arrEnd > arrStart) {
+            return text.substring(arrStart, arrEnd + 1);
+        } else if (objStart != -1 && objEnd != -1 && objEnd > objStart) {
+            return text.substring(objStart, objEnd + 1);
+        }
+        return null;
+    }
+
     @PostMapping(value = "/ask", produces = MediaType.TEXT_PLAIN_VALUE)
     public ResponseEntity<String> ask(@RequestBody String userPrompt) {
         String parseResult = ollamaService.buildPrompt(availableTools, userPrompt);
         String llmResponse = ollamaService.chat("qwen3-coder:480b-cloud", parseResult);
-
         try {
-            String json = extractFirstJsonObject(llmResponse);
+            String json = extractFirstJsonStructure(llmResponse);
             if (json == null) {
-                return ResponseEntity.status(500).body("LLM response did not contain a valid JSON object.");
+                return ResponseEntity.ok(llmResponse.trim());
             }
             ObjectMapper mapper = new ObjectMapper();
             JsonNode root = mapper.readTree(json);
-            String toolName = root.get("name").asText();
-            Map<String, Object> arguments = mapper.convertValue(root.get("arguments"), Map.class);
-
+            // Always treat as array for unified processing
+            List<JsonNode> toolCalls;
+            if (root.isArray()) {
+                toolCalls = new java.util.ArrayList<>();
+                root.forEach(toolCalls::add);
+            } else if ((root.has("name") || root.has("tool")) && root.has("arguments")) {
+                toolCalls = java.util.Collections.singletonList(root);
+            } else {
+                return ResponseEntity.ok(llmResponse.trim());
+            }
+            StringBuilder allResults = new StringBuilder();
             McpSyncClient mcpSyncClient = mcpClients.get(0);
-            Object toolResult = mcpSyncClient.callTool(new McpSchema.CallToolRequest(toolName, arguments));
-            String resultText = (toolResult == null) ? "No result returned." : toolResult.toString();
-
-            // Build summarization prompt and call LLM again
-            String summarizationPrompt = buildSummarizationPrompt(userPrompt, resultText);
+            for (JsonNode toolCall : toolCalls) {
+                String toolName = toolCall.has("name") ? toolCall.get("name").asText() : toolCall.get("tool").asText();
+                Map<String, Object> arguments = mapper.convertValue(toolCall.get("arguments"), Map.class);
+                Object toolResult = mcpSyncClient.callTool(new McpSchema.CallToolRequest(toolName, arguments));
+                String resultText = (toolResult == null) ? "No result returned." : toolResult.toString();
+                allResults.append(resultText).append("\n\n");
+            }
+            String summarizationPrompt = buildSummarizationPrompt(userPrompt, allResults.toString().trim());
             String summary = ollamaService.chat("qwen3-coder:480b-cloud", summarizationPrompt);
             return ResponseEntity.ok(summary);
         } catch (Exception e) {
@@ -97,22 +122,11 @@ public class McpController {
         }
     }
 
-    // Helper to extract the first JSON object from a string
-    private String extractFirstJsonObject(String text) {
-        int start = text.indexOf('{');
-        int end = text.lastIndexOf('}');
-        if (start != -1 && end != -1 && end > start) {
-            return text.substring(start, end + 1);
-        }
-        return null;
-    }
-
     // Helper to build a summarization prompt for the LLM
     private String buildSummarizationPrompt(String userPrompt, String toolResult) {
         return "User request: \"" + userPrompt + "\"\n"
             + "Tool result: " + toolResult + "\n\n"
-            + "Above is the result of calling one or more tools. The user cannot see the results, so you should explain them to the user if referencing them in your answer. "
-            + "Continue from where you left off without repeating yourself. Provide a clear, concise answer for the user.";
+            + "Above is the result of calling one or more tools. The user cannot see the results, so you should explain them to the user if referencing them in your answer. Continue from where you left off without repeating yourself.";
     }
 
 
