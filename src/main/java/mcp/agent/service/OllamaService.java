@@ -1,5 +1,7 @@
 package mcp.agent.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import mcp.agent.model.Tool;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
@@ -42,5 +44,15 @@ public class OllamaService {
             return (String) message.get("content");
         }
         return "No response";
+    }
+
+    public String buildPrompt(List<Tool> tools, String userPrompt) {
+        try {
+            ObjectMapper mapper = new ObjectMapper();
+            String toolsJson = mapper.writerWithDefaultPrettyPrinter().writeValueAsString(tools);
+            return "TOOLS:\n" + toolsJson + "\n\nUSER REQUEST:\n" + userPrompt;
+        } catch (Exception e) {
+            return "TOOLS: [error serializing tools]\n\nUSER REQUEST:\n" + userPrompt;
+        }
     }
 }
