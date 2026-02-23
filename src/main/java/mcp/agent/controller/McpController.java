@@ -125,8 +125,7 @@ public class McpController {
     // Helper to build a summarization prompt for the LLM
     private String buildSummarizationPrompt(String userPrompt, String toolResult) {
         return "User request: \"" + userPrompt + "\"\n"
-            + "Tool result: " + toolResult + "\n\n"
-            + "Above is the result of calling one or more tools. The user cannot see the results, so you should explain them to the user if referencing them in your answer. Continue from where you left off without repeating yourself.";
+            + "Tool result: " + toolResult;
     }
 
 

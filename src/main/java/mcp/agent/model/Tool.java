@@ -8,13 +8,14 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  */
 public record Tool(
     @JsonProperty("type") String type,
-    @JsonProperty("function") ToolFunction function
+    @JsonProperty("function") ToolFunction function,
+    @JsonProperty("responseType") String responseType
 ) {
 
     /**
-     * Creates a new Tool with type "function"
+     * Creates a new Tool with type "function" and responseType
      */
-    public static Tool function(ToolFunction function) {
-        return new Tool("function", function);
+    public static Tool function(ToolFunction function, String responseType) {
+        return new Tool("function", function, responseType);
     }
 }
